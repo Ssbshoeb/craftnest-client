@@ -43,6 +43,7 @@ const selectedOrder = ref(null)
 const newStatus = ref('')
 const statusNote = ref('')
 const updatingStatus = ref(false)
+const loadingDetail = ref(false)
 
 const statusOptions = [
   { title: 'All Status', value: '' },
@@ -83,11 +84,47 @@ const fetchOrders = async () => {
   }
 }
 
-const openOrder = order => {
+/*
+ * Open on the row we already have so the dialog paints immediately, then
+ * replace it with the full record. The list does not carry status_logs or
+ * payments, so without this second read the status timeline is always empty.
+ */
+const openOrder = async order => {
   selectedOrder.value = order
   newStatus.value = order.status
   statusNote.value = ''
   isDetailOpen.value = true
+  loadingDetail.value = true
+
+  const encryptedId = encryptIt(String(order.id))
+
+  ApiService.get(`/orders/${encryptedId}`,
+    response => {
+      if (response?.data) selectedOrder.value = response.data
+      loadingDetail.value = false
+    },
+    () => {
+      loadingDetail.value = false
+    },
+  )
+}
+
+/**
+ * Invoice (proposal Section 05: "Invoice print / PDF").
+ *
+ * Opened in a new tab rather than downloaded: the page carries its own
+ * Print / Save as PDF button, which is what the owner actually wants and
+ * avoids shipping a PDF library just for this.
+ */
+const openInvoice = () => {
+  if (!selectedOrder.value) return
+
+  const encryptedId = encryptIt(String(selectedOrder.value.id))
+
+  ApiService.download(
+    `/orders/${encryptedId}/invoice`,
+    `invoice-${selectedOrder.value.order_no}.html`,
+  )
 }
 
 const nextStatusOptions = computed(() => {
@@ -291,7 +328,17 @@ onMounted(() => fetchOrders())
           <h3 class="text-body-1 font-weight-medium mb-2">
             Status History
           </h3>
-          <VTimeline density="compact" side="end">
+          <p v-if="loadingDetail" class="text-body-2 text-medium-emphasis">
+            Loading history…
+          </p>
+          <p
+            v-else-if="!selectedOrder.status_logs?.length"
+            class="text-body-2 text-medium-emphasis"
+          >
+            No status changes recorded yet.
+          </p>
+
+          <VTimeline v-else density="compact" side="end">
             <VTimelineItem
               v-for="log in selectedOrder.status_logs"
               :key="log.id"
@@ -314,6 +361,13 @@ onMounted(() => fetchOrders())
         <VDivider />
 
         <VCardActions>
+          <VBtn
+            variant="text"
+            prepend-icon="tabler-file-invoice"
+            @click="openInvoice"
+          >
+            Invoice
+          </VBtn>
           <VSpacer />
           <VBtn color="secondary" variant="outlined" @click="isDetailOpen = false">
             Close

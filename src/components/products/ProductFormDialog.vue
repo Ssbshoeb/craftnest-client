@@ -32,6 +32,8 @@ const categories = ref([])
 const activeTab = ref('basic')
 const productImages = ref([])
 const fileInput = ref(null)
+const loadingMasters = ref(false)
+const masters = ref({ wood_types: [], colours: [], fabrics: [], warranties: [] })
 
 const saleTypeOptions = [
   { title: 'Online Buy (fixed price, add to cart)', value: 'online_buy' },
@@ -55,6 +57,12 @@ const defaultForm = () => ({
   warranty: '',
   is_featured: 0,
   is_active: 1,
+
+  // Drive the storefront filter rail. Sent as value_list ids; the API turns
+  // them into product_options rows.
+  material_value_list_id: null,
+  colour_option_ids: [],
+  fabric_option_ids: [],
 })
 
 const formData = ref(defaultForm())
@@ -70,6 +78,23 @@ const fetchCategories = async () => {
   const { data, error } = await useApi(createUrl('/categories', { query: { itemsPerPage: 100 } }))
   if (!error.value && data.value) categories.value = data.value.data || []
 }
+
+const fetchMasters = async () => {
+  loadingMasters.value = true
+  try {
+    const { data, error } = await useApi('/products/masters')
+
+    if (!error.value && data.value?.data) masters.value = { ...masters.value, ...data.value.data }
+  } finally {
+    loadingMasters.value = false
+  }
+}
+
+/** Pull the ids of one option type off the product's saved options. */
+const optionIds = (product, type) =>
+  (product.options || [])
+    .filter(option => option.option_type === type)
+    .map(option => option.value_list_id)
 
 const resetForm = () => {
   formData.value = defaultForm()
@@ -100,6 +125,9 @@ const initializeForm = () => {
       warranty: p.warranty || '',
       is_featured: p.is_featured ? 1 : 0,
       is_active: p.is_active !== undefined ? (p.is_active ? 1 : 0) : 1,
+      material_value_list_id: p.material_value_list_id || null,
+      colour_option_ids: optionIds(p, 'colour'),
+      fabric_option_ids: optionIds(p, 'fabric'),
     }
     productImages.value = p.images || []
   } else {
@@ -187,6 +215,7 @@ const deleteImage = async image => {
 watch(() => props.isOpen, newVal => {
   if (newVal) {
     fetchCategories()
+    fetchMasters()
     initializeForm()
   }
 })
@@ -406,6 +435,69 @@ watch(() => props.isOpen, newVal => {
                     v-model="formData.weight_kg"
                     label="Weight (kg)"
                     type="number"
+                  />
+                </VCol>
+
+                <!--
+                  Material and colour drive the storefront's filter rail
+                  (proposal Section 04). Both come from Masters, so the owner
+                  can add a new wood or shade without a code change.
+                -->
+                <VCol cols="12">
+                  <VDivider class="mb-4" />
+                  <p class="text-body-2 text-medium-emphasis mb-0">
+                    Material and colours appear as filters on the website.
+                  </p>
+                </VCol>
+
+                <VCol
+                  cols="12"
+                  md="6"
+                >
+                  <AppSelect
+                    v-model="formData.material_value_list_id"
+                    :items="masters.wood_types"
+                    item-title="description"
+                    item-value="id"
+                    label="Material / Wood Type"
+                    :loading="loadingMasters"
+                    clearable
+                  />
+                </VCol>
+
+                <VCol
+                  cols="12"
+                  md="6"
+                >
+                  <AppSelect
+                    v-model="formData.colour_option_ids"
+                    :items="masters.colours"
+                    item-title="description"
+                    item-value="id"
+                    label="Colour Options"
+                    :loading="loadingMasters"
+                    multiple
+                    chips
+                    closable-chips
+                    clearable
+                  />
+                </VCol>
+
+                <VCol
+                  cols="12"
+                  md="6"
+                >
+                  <AppSelect
+                    v-model="formData.fabric_option_ids"
+                    :items="masters.fabrics"
+                    item-title="description"
+                    item-value="id"
+                    label="Fabric Options"
+                    :loading="loadingMasters"
+                    multiple
+                    chips
+                    closable-chips
+                    clearable
                   />
                 </VCol>
               </VRow>
